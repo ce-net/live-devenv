@@ -155,6 +155,9 @@ struct NodeConfig {
     /// The index of the node that holds ws.keys.
     #[serde(default)]
     keys_node: usize,
+    /// /tick and /cut, for the proof driver only; off on a deployed node.
+    #[serde(default)]
+    test_controls: bool,
 }
 
 fn default_class() -> String {
@@ -179,7 +182,10 @@ fn cmd_init(args: &[String]) -> i32 {
     let out = PathBuf::from(arg(args, "--out").unwrap_or("tenant".into()));
     let spec = arg(args, "--nodes").expect("--nodes N1=http://host:port,N2=...,N3=...");
     let worker = arg(args, "--worker").unwrap_or("N3".into());
-    let keep_root = args.iter().any(|a| a == "--keep-root");
+    // --private: a deployed workspace (root kept in N1's ws.keys for sign-in sessions, anti-entropy every 2 s,
+    // no test controls); without it, a proof tenant
+    let private = args.iter().any(|a| a == "--private");
+    let keep_root = private || args.iter().any(|a| a == "--keep-root");
     let listen_port = |u: &str| u.rsplit(':').next().unwrap_or("7480").trim_end_matches('/').to_string();
     let list: Vec<(String, String)> = spec.split(',').map(|kv| kv.split_once('=').map(|(a, b)| (a.to_string(), b.to_string())).expect("N=url")).collect();
     let now = now_ms();
@@ -192,7 +198,7 @@ fn cmd_init(args: &[String]) -> i32 {
         let cfg = NodeConfig {
             idx: i,
             name: name.clone(),
-            listen: format!("0.0.0.0:{}", listen_port(url)),
+            listen: if private { url.trim_start_matches("http://").trim_end_matches('/').to_string() } else { format!("0.0.0.0:{}", listen_port(url)) },
             peers: list.iter().map(|x| x.1.clone()).collect(),
             secret: ws_core::hex(&t.node_keys[i].seed_bytes()),
             chain: t.node_chains[i].clone(),
@@ -201,11 +207,12 @@ fn cmd_init(args: &[String]) -> i32 {
             site: None,
             state: None,
             min_class: default_class(),
-            sync_ms: 0,
+            sync_ms: if private { 2000 } else { 0 },
             root_secret: if i == 0 && keep_root { Some(ws_core::hex(&t.root.seed_bytes())) } else { None },
             people: std::collections::BTreeMap::new(),
             person_key_file: None,
             keys_node: 0,
+            test_controls: !private,
         };
         std::fs::write(out.join(format!("{name}.json")), serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
         nodes.push((name.clone(), url.clone(), t.node_keys[i].pk()));
@@ -400,6 +407,7 @@ fn cmd_serve(args: &[String]) -> i32 {
                 };
                 (200, "application/json", json!(a).to_string().into())
             }
+            ("POST", "/tick") | ("POST", "/cut") if !cfg.test_controls => (404, "text/plain", "not found".into()),
             ("POST", "/tick") => {
                 let mut n = node.lock().unwrap();
                 n.now = now_ms();
