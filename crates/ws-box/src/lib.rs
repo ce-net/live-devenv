@@ -305,8 +305,10 @@ pub mod sandbox {
     }
 
     pub fn apply(cmd: &mut Command, s: Spec) -> Result<(), String> {
-        let want_ns = s.class == "ns+landlock+seccomp";
+        let want_ns = s.class == "ns+landlock+seccomp" && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-ns");
         let want = s.class != "none";
+        let want_ll = want && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-landlock");
+        let want_sc = want && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-seccomp");
         unsafe {
             cmd.pre_exec(move || {
                 if want_ns && !ns() {
@@ -315,10 +317,10 @@ pub mod sandbox {
                 rlimit(libc::RLIMIT_CPU, s.secs);
                 rlimit(libc::RLIMIT_FSIZE, 512 << 20);
                 rlimit(libc::RLIMIT_AS, (s.memory_mb.max(512) * 4) << 20);
-                if want {
-                    if !landlock(&s.ro, &s.rw).map_err(std::io::Error::other)? {
-                        return Err(std::io::Error::other("landlock not enforced"));
-                    }
+                if want_ll && !landlock(&s.ro, &s.rw).map_err(std::io::Error::other)? {
+                    return Err(std::io::Error::other("landlock not enforced"));
+                }
+                if want_sc {
                     seccomp().map_err(std::io::Error::other)?;
                 }
                 Ok(())
@@ -385,15 +387,19 @@ mod t {
 mod diag {
     use super::*;
     #[test]
-    fn spawn_inside_box() {
-        for class in ["ns+landlock+seccomp", "landlock+seccomp"] {
-            let tmp = std::env::temp_dir().join(format!("ws-box-diag-{}-{}", std::process::id(), class.len()));
+    fn rustc_inside_box() {
+        let Some((rustc, sys)) = find_rustc() else { return };
+        for mode in ["full", "no-seccomp", "no-landlock", "no-ns"] {
+            std::env::set_var("WS_BOX_DIAG", mode);
+            let tmp = std::env::temp_dir().join(format!("ws-box-diag-{}-{mode}", std::process::id()));
             std::fs::create_dir_all(&tmp).unwrap();
-            let mut c = Command::new("/bin/sh");
-            c.arg("-c").arg("/usr/bin/true && echo spawn-ok; cc --version >/dev/null 2>&1 && echo cc-ok || echo cc-fail-$?; cc --version 2>&1 | head -2").env_clear().env("PATH", "/usr/bin:/bin").env("TMPDIR", &tmp);
-            sandbox::apply(&mut c, sandbox::Spec { ro: vec![], rw: vec![tmp.clone()], class: class.into(), memory_mb: 1024, secs: 10 }).unwrap();
+            std::fs::write(tmp.join("a.rs"), "#[test] fn t() {}").unwrap();
+            let mut c = Command::new(&rustc);
+            c.args(["--edition", "2021", "--test", "a.rs", "-o", "a"]).current_dir(&tmp).env_clear().env("PATH", "/usr/bin:/bin").env("TMPDIR", &tmp).env("HOME", &tmp);
+            sandbox::apply(&mut c, sandbox::Spec { ro: vec![sys.clone()], rw: vec![tmp.clone()], class: "ns+landlock+seccomp".into(), memory_mb: 1024, secs: 60 }).unwrap();
             let o = c.output().unwrap();
-            eprintln!("DIAG {class}: {} | {}", String::from_utf8_lossy(&o.stdout).replace('\n', " / "), String::from_utf8_lossy(&o.stderr).replace('\n', " / "));
+            eprintln!("DIAG {mode}: exit {:?} {}", o.status.code(), String::from_utf8_lossy(&o.stderr).lines().take(3).collect::<Vec<_>>().join(" / "));
         }
+        std::env::remove_var("WS_BOX_DIAG");
     }
 }
