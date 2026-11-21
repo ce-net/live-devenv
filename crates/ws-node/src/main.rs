@@ -8,6 +8,8 @@
 //!   ws-node mcp --node URL --identity FILE           the agent door (MCP over stdio); no exec, no shell
 //!   ws-node mount --node URL --identity FILE --dir DIR [--every MS]   a directory kept in step with the workspace
 //!   ws-node hold [--ro P]... [--rw P]... -- PROGRAM ARGS   run a long-lived program boxed (Landlock + seccomp)
+//!   ws-node add-node --config N1.json --name N3 --url http://h:p --out DIR   a node joins a deployed tenant
+//!   ws-node adopt --config NODE.json --directory DIR/directory.json            another node takes the new member list
 //!   ws-node seed --dir DIR [--worker I]                the sample tree and tool records, once
 //!   ws-node contract                                 print the generated contract
 
@@ -44,6 +46,8 @@ fn main() {
         Some("mcp") => cmd_mcp(&args),
         Some("mount") => cmd_mount(&args),
         Some("hold") => cmd_hold(&args),
+        Some("add-node") => cmd_add_node(&args),
+        Some("adopt") => cmd_adopt(&args),
         Some("seed") => {
             // seed a new workspace with the sample tree and the tool records, as one person, through node 0
             let dir = PathBuf::from(arg(&args, "--dir").unwrap_or("tenant".into()));
@@ -590,6 +594,91 @@ fn cmd_mount(args: &[String]) -> i32 {
     }
 }
 
+fn write_private(p: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let tmp = p.with_extension("tmp");
+    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+    f.write_all(text.as_bytes())?;
+    std::fs::rename(tmp, p)
+}
+
+/// The member list every node of a tenant must hold the same: the directory and the peer URLs. No secret is in it.
+#[derive(Serialize, Deserialize)]
+struct Members {
+    dir: Directory,
+    peers: Vec<String>,
+}
+
+/// `add-node`: on the keys node (its config holds the tenant root), a new node key and its chain from the root, the
+/// new node's config in DIR (it travels through keys, never chat or a repo), DIR/directory.json (no secrets) for the
+/// other nodes' `adopt`, and the keys node's own config updated (the old one kept as .bak). Restart every node after.
+fn cmd_add_node(args: &[String]) -> i32 {
+    let cfg_path = PathBuf::from(arg(args, "--config").expect("--config N1.json"));
+    let name = arg(args, "--name").expect("--name");
+    let url = arg(args, "--url").expect("--url http://host:port");
+    let out = PathBuf::from(arg(args, "--out").expect("--out DIR"));
+    let mut cfg: NodeConfig = serde_json::from_str(&std::fs::read_to_string(&cfg_path).expect("config")).expect("config json");
+    let Some(root) = cfg.root_secret.as_ref().and_then(|r| ws_core::unhex(r)).and_then(|b| <[u8; 32]>::try_from(b).ok()).map(Key::from_secret) else {
+        eprintln!("add-node: {} holds no tenant root; run it on the keys node", cfg_path.display());
+        return 2;
+    };
+    if cfg.dir.nodes.iter().any(|n| n.0 == name) || cfg.peers.contains(&url) {
+        eprintln!("add-node: {name} or {url} is already a member");
+        return 2;
+    }
+    let key = Key::from_secret(os_seed());
+    let chain = Chain::default().extend(&root, &key.pk(), ws_core::sim::node_grants(), now_ms() + 24 * 365 * ws_core::sim::HOUR);
+    cfg.dir.nodes.push((name.clone(), key.pk()));
+    cfg.dir.names.insert(key.pk(), name.clone());
+    cfg.peers.push(url.clone());
+    let listen = url.trim_start_matches("http://").trim_end_matches('/').to_string();
+    let new = NodeConfig {
+        idx: cfg.dir.nodes.len() - 1,
+        name: name.clone(),
+        listen,
+        peers: cfg.peers.clone(),
+        secret: ws_core::hex(&key.seed_bytes()),
+        chain,
+        dir: cfg.dir.clone(),
+        worker: false,
+        site: cfg.site.clone(),
+        state: None,
+        min_class: cfg.min_class.clone(),
+        sync_ms: cfg.sync_ms,
+        root_secret: None,
+        people: Default::default(),
+        person_key_file: cfg.person_key_file.clone(),
+        keys_node: cfg.keys_node,
+        test_controls: false,
+        max_load: 0.0,
+    };
+    std::fs::create_dir_all(&out).expect("out");
+    write_private(&out.join(format!("{name}.json")), &serde_json::to_string_pretty(&new).unwrap()).expect("write node");
+    std::fs::write(out.join("directory.json"), serde_json::to_string_pretty(&Members { dir: cfg.dir.clone(), peers: cfg.peers.clone() }).unwrap()).expect("write directory");
+    std::fs::copy(&cfg_path, cfg_path.with_extension("json.bak")).expect("backup");
+    write_private(&cfg_path, &serde_json::to_string_pretty(&cfg).unwrap()).expect("write config");
+    println!("{name} joins as node {} ({}); {} written, directory.json for the other nodes' adopt; restart every node", new.idx, &key.pk()[..16], out.join(format!("{name}.json")).display());
+    0
+}
+
+/// `adopt`: a node takes the tenant's new member list (directory.json from add-node); its key, chain and state stay.
+fn cmd_adopt(args: &[String]) -> i32 {
+    let cfg_path = PathBuf::from(arg(args, "--config").expect("--config NODE.json"));
+    let m: Members = serde_json::from_str(&std::fs::read_to_string(arg(args, "--directory").expect("--directory FILE")).expect("directory")).expect("directory json");
+    let mut cfg: NodeConfig = serde_json::from_str(&std::fs::read_to_string(&cfg_path).expect("config")).expect("config json");
+    if m.dir.root != cfg.dir.root || m.dir.nodes.get(cfg.idx).map(|n| n.0 != cfg.name).unwrap_or(true) {
+        eprintln!("adopt: that directory is another tenant's, or lists this node at another place");
+        return 2;
+    }
+    cfg.dir = m.dir;
+    cfg.peers = m.peers;
+    std::fs::copy(&cfg_path, cfg_path.with_extension("json.bak")).expect("backup");
+    write_private(&cfg_path, &serde_json::to_string_pretty(&cfg).unwrap()).expect("write config");
+    println!("{} now lists {} nodes; restart it", cfg.name, cfg.dir.nodes.len());
+    0
+}
+
 /// `hold`: exec a long-running program with Landlock (system paths and `--ro` read-only, `--rw` writable, nothing
 /// else) and the seccomp deny list, at nice 10. Linux only. It prints the class it got before the exec.
 fn cmd_hold(args: &[String]) -> i32 {
@@ -710,6 +799,36 @@ mod tests {
         assert_eq!(a.audit.len(), b.audit.len());
         assert!(verify_log(&b.audit.all(), &[b.pk()]).ok);
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod add_node_tests {
+    use super::*;
+
+    #[test]
+    fn a_node_joins_a_deployed_tenant_and_the_others_adopt_the_list() {
+        let d = std::env::temp_dir().join(format!("ws-add-{}", std::process::id()));
+        std::fs::remove_dir_all(&d).ok();
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(cmd_init(&s(&["init", "--private", "--nodes", "N1=http://127.0.0.1:1,N2=http://127.0.0.1:2", "--worker", "N1", "--out", &d.display().to_string()])), 0);
+        let n1 = d.join("N1.json").display().to_string();
+        let out = d.join("join").display().to_string();
+        assert_eq!(cmd_add_node(&s(&["add-node", "--config", &n1, "--name", "N3", "--url", "http://127.0.0.1:3", "--out", &out])), 0);
+        assert_eq!(cmd_add_node(&s(&["add-node", "--config", &n1, "--name", "N3", "--url", "http://127.0.0.1:3", "--out", &out])), 2, "twice");
+        let n2 = d.join("N2.json").display().to_string();
+        assert_eq!(cmd_add_node(&s(&["add-node", "--config", &n2, "--name", "N4", "--url", "http://127.0.0.1:4", "--out", &out])), 2, "only the keys node");
+        assert_eq!(cmd_adopt(&s(&["adopt", "--config", &n2, "--directory", &format!("{out}/directory.json")])), 0);
+        let load = |p: &str| serde_json::from_str::<NodeConfig>(&std::fs::read_to_string(p).unwrap()).unwrap();
+        let (a, b, c) = (load(&n1), load(&n2), load(&format!("{out}/N3.json")));
+        assert_eq!(a.dir.nodes, b.dir.nodes);
+        assert_eq!(c.dir.nodes, a.dir.nodes);
+        assert_eq!((c.idx, a.peers.len(), b.peers.len()), (2, 3, 3));
+        assert!(c.root_secret.is_none() && !std::fs::read_to_string(format!("{out}/directory.json")).unwrap().contains(&c.secret));
+        // the new node's chain is the root's: a node built from its file signs envelopes every member accepts
+        let n = Node::new(c.idx, &c.name, Key::from_secret(ws_core::unhex(&c.secret).unwrap().try_into().unwrap()), c.chain.clone(), c.dir.clone(), Box::new(NoRunner));
+        assert!(c.chain.check(&n.pk(), "ws.peer:sync", None, None, &a.dir.root, now_ms(), &Default::default()).is_ok());
+        std::fs::remove_dir_all(&d).ok();
     }
 }
 
