@@ -111,4 +111,8 @@ $("#run14").onclick = async () => {
   }, 30);
 };
 
-try { if (localStorage.getItem("devenv-mode") === "sim") document.querySelector('[data-mode="sim"]').click(); } catch (e) {}
+// #sim opens sim mode; #sim-run also runs the 14 steps
+let wantSim = location.hash.startsWith("#sim");
+try { wantSim ||= localStorage.getItem("devenv-mode") === "sim"; } catch (e) {}
+if (wantSim) document.querySelector('[data-mode="sim"]').click();
+if (location.hash === "#sim-run") $("#run14").click();
