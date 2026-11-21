@@ -99,6 +99,8 @@ pub struct Conflict {
     pub kind: String,
     pub sides: Vec<String>,
     pub covers: Vec<Uid>,
+    /// The path the file was created at.
+    pub origin: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -359,7 +361,7 @@ impl Replica {
                 for j in i + 1..all.len() {
                     let (a, b) = (&all[i], &all[j]);
                     if i > 0 && Self::concurrent(a, b) && !resolved(a.uid, b.uid) {
-                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "rename".into(), sides: vec![a.to.clone(), b.to.clone()], covers: vec![a.uid, b.uid] });
+                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "rename".into(), sides: vec![a.to.clone(), b.to.clone()], covers: vec![a.uid, b.uid], origin: e.created.to.clone() });
                     }
                 }
             }
@@ -367,14 +369,14 @@ impl Replica {
                 for j in i + 1..e.bins.len() {
                     let (a, b) = (&e.bins[i].0, &e.bins[j].0);
                     if Self::concurrent(a, b) && !resolved(a.uid, b.uid) {
-                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "binary".into(), sides: vec![a.to.clone(), b.to.clone()], covers: vec![a.uid, b.uid] });
+                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "binary".into(), sides: vec![a.to.clone(), b.to.clone()], covers: vec![a.uid, b.uid], origin: e.created.to.clone() });
                     }
                 }
             }
             for (d, seen) in &e.deletes {
                 if let Some(u) = e.edits.iter().find(|u| !vv_has(seen, u.0, u.1)) {
                     if !resolved(*d, *u) {
-                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "edit-vs-delete".into(), sides: vec!["deleted".into(), "edited".into()], covers: vec![*d, *u] });
+                        out.push(Conflict { file: id.clone(), path: path.clone(), kind: "edit-vs-delete".into(), sides: vec!["deleted".into(), "edited".into()], covers: vec![*d, *u], origin: e.created.to.clone() });
                     }
                 }
             }
@@ -382,7 +384,7 @@ impl Replica {
         for (p, f) in &live {
             if let Some((_, base)) = p.split_once('~').filter(|_| p.starts_with(prefix)) {
                 let _ = base;
-                out.push(Conflict { file: f.clone(), path: p.clone(), kind: "same-path".into(), sides: vec![p.split('~').next().unwrap().into(), p.clone()], covers: vec![] });
+                out.push(Conflict { file: f.clone(), path: p.clone(), kind: "same-path".into(), sides: vec![p.split('~').next().unwrap().into(), p.clone()], covers: vec![], origin: p.clone() });
             }
         }
         out

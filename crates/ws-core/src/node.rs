@@ -325,7 +325,7 @@ impl Node {
             }
             Op::FsResolve { path, pick } => {
                 gate!(Some(&pick), None);
-                let Some(c) = self.fs.conflicts("").into_iter().find(|c| c.path == path || c.sides.contains(&path)) else {
+                let Some(c) = self.fs.conflicts("").into_iter().find(|c| c.path == path || c.origin == path || c.sides.contains(&path)) else {
                     return Answer::Error(format!("no conflict on {path}"));
                 };
                 let t = self.hlc();
@@ -703,7 +703,7 @@ impl Node {
         let oref = self.fs.put_snap(out);
         let src = self.derived.get(&input).cloned().unwrap_or(input);
         self.derived.insert(oref.clone(), src);
-        Answer::Ok(json!({"receipt": v["receipt"], "output": oref, "stdout": v["stdout"], "node": self.dir.nodes.get(at).map(|n| n.0.clone())}))
+        Answer::Ok(json!({"receipt": v["receipt"], "output": oref, "stdout": v["stdout"], "stderr": v["stderr"], "node": self.dir.nodes.get(at).map(|n| n.0.clone())}))
     }
 
     fn run_start(&mut self, env: &Envelope, req: RunReq) -> Answer {
@@ -771,7 +771,7 @@ impl Node {
         if out.exit == 0 || req.tool.provides.iter().any(|p| p.starts_with("test:")) {
             self.cache.insert(key, (r.clone(), man.clone()));
         }
-        Answer::Ok(json!({"receipt": r, "manifest": man, "blobs": oblobs, "stdout": out.stdout}))
+        Answer::Ok(json!({"receipt": r, "manifest": man, "blobs": oblobs, "stdout": out.stdout, "stderr": out.stderr.chars().take(4000).collect::<String>()}))
     }
 
     fn peer(&mut self, env: &Envelope, op: Op) -> Answer {

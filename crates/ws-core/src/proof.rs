@@ -270,7 +270,8 @@ pub fn run(net: &mut dyn Net, p: &mut People, node_keys: Vec<String>, clock: &dy
         names.push(l.as_array().map(|a| a.iter().map(|x| x["path"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>()).unwrap_or_default());
     }
     let one = names.iter().all(|n| n.contains(&"crates/parser/src/text.rs".to_string()) && !n.iter().any(|p| p.contains("strings") || p.contains("util")));
-    push(6, "two renames of one file on a partitioned node, then heal", "one tree conflict on all replicas; H1 resolves; one name everywhere; receipt", x.ok().is_some() && y.ok().is_some() && conflicts == [1, 1, 1] && res.ok().is_some() && after_c == [0, 0, 0] && one, json!({"conflicts_after_heal": conflicts, "after_resolve": after_c, "names": names[0]}), t0);
+    let res_detail = res.clone();
+    push(6, "two renames of one file on a partitioned node, then heal", "one tree conflict on all replicas; H1 resolves; one name everywhere; receipt", x.ok().is_some() && y.ok().is_some() && conflicts == [1, 1, 1] && res.ok().is_some() && after_c == [0, 0, 0] && one, json!({"conflicts_after_heal": conflicts, "after_resolve": after_c, "names": names[0], "resolve": res_detail}), t0);
 
     // 7. build and test placed on the worker
     let t0 = clock();
@@ -291,7 +292,7 @@ pub fn run(net: &mut dyn Net, p: &mut People, node_keys: Vec<String>, clock: &dy
     let iso = b["receipt"]["isolation"].clone();
     push(7, "A1 builds and tests a snapshot, entering at N2", "placed on N3; run receipts name N3 and the isolation class; cases typed; one fails",
         b["receipt"]["node"] == worker && t["receipt"]["node"] == worker && b["receipt"]["exit"] == 0 && failed == 1 && iso.is_string(),
-        json!({"build": b["receipt"], "test": t["receipt"], "cases": t["cases"]}), t0);
+        json!({"build": b["receipt"], "test": t["receipt"], "cases": t["cases"], "build_stderr": b["stderr"], "answer": if b["receipt"].is_null() { b.clone() } else { Value::Null }}), t0);
     let first_build = (snap.clone(), b["receipt"].clone());
 
     // 8. the fix in a change set, tested there
