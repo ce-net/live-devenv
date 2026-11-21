@@ -1,0 +1,30 @@
+[
+  {
+    "exit": 0,
+    "isolation": "ns+landlock+seccomp",
+    "source": "2013c7c0c54dedf5d2a00ac7db7b57ce00b6dc8f6637c4f4ccfa19993040b20f",
+    "stdout": "\n",
+    "tool": "rustc-test"
+  },
+  {
+    "exit": 0,
+    "isolation": "ns+landlock+seccomp",
+    "source": "9a3ac6483513be686539e1a439f62bd72957ac3c4c9a892fa85980e838f9cf11",
+    "stdout": "\nrunning 3 tests\ntest tests::counts_pairs ... ok\ntest tests::indented_comment_is_a_comment ... ok\ntest tests::parses_a_pair ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n\n",
+    "tool": "run-test"
+  },
+  {
+    "exit": 101,
+    "isolation": "ns+landlock+seccomp",
+    "source": "2013c7c0c54dedf5d2a00ac7db7b57ce00b6dc8f6637c4f4ccfa19993040b20f",
+    "stdout": "\nrunning 3 tests\ntest tests::counts_pairs ... ok\ntest tests::indented_comment_is_a_comment ... FAILED\ntest tests::parses_a_pair ... ok\n\nfailures:\n\n---- tests::indented_comment_is_a_comment stdout ----\n\nthread 'tests::indented_comment_is_a_comment' (1471700) panicked at /tmp/ws-sim-1471544/run-1471544-1/in/crates/parser/src/lib.rs:40:9:\nassertion failed: is_comment(\"    # note = 1\")\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    tests::indented_comment_is_a_comment\n\ntest result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\n",
+    "tool": "run-test"
+  },
+  {
+    "exit": 0,
+    "isolation": "ns+landlock+seccomp",
+    "source": "9a3ac6483513be686539e1a439f62bd72957ac3c4c9a892fa85980e838f9cf11",
+    "stdout": "\n",
+    "tool": "rustc-test"
+  }
+]

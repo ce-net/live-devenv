@@ -58,6 +58,11 @@ mint a new chain from it afterwards. People delegate to agents themselves, and e
 | 13 | Commit of the merged snapshot; pin | the commit names the snapshot ref; the pin is listed |
 | 14 | Verify the exported log offline | every link and signature valid; a copy with one receipt changed fails |
 
+Recorded on three real nodes on 2026-11-21 ([proof/](proof/)): 14 of 14 hold. There are 70 receipts in 3 node
+chains, 8 of them refusals, and every link and signature verifies. The build and the tests ran on the worker at
+`ns+landlock+seccomp`. The repeated build was a cache hit with no box started. The revoked agent was refused on all
+three nodes after one round. CI runs the same 14 steps on the in-process mesh on every push.
+
 ## Layout
 
 | Crate | What it holds | Stands in for, on the ce-net mesh |

@@ -1,0 +1,9 @@
+{
+ "latest": "real-2026-11-21.json",
+ "when": "2026-11-21, three Linux nodes over the mesh: N1 and N2 are edges, N3 is the worker (aarch64, the only node with a compile tool)",
+ "hosts": [
+  "N1 x86_64 edge",
+  "N2 x86_64 edge",
+  "N3 aarch64 worker"
+ ]
+}
