@@ -246,7 +246,15 @@ pub mod sandbox {
     }
 
     fn seccomp() -> Result<(), String> {
-        let d = denied();
+        seccomp_with(denied())
+    }
+
+    /// The deny list without `socket`: a held program talks to its model provider and serves its own page.
+    fn denied_hold() -> Vec<libc::c_long> {
+        denied().into_iter().filter(|n| *n != libc::SYS_socket).collect()
+    }
+
+    fn seccomp_with(d: Vec<libc::c_long>) -> Result<(), String> {
         let mut f = vec![Filter { code: 0x20, jt: 0, jf: 0, k: 4 }, Filter { code: 0x15, jt: 1, jf: 0, k: ARCH }, Filter { code: 0x06, jt: 0, jf: 0, k: 0x8000_0000 }, Filter { code: 0x20, jt: 0, jf: 0, k: 0 }];
         // x32 numbers (bit 30) would bypass the list on x86_64: refuse them all
         #[cfg(target_arch = "x86_64")]
@@ -323,7 +331,7 @@ pub mod sandbox {
                 if !landlock(&ro, &rw).map_err(std::io::Error::other)? {
                     return Err(std::io::Error::other("landlock not enforced"));
                 }
-                seccomp().map_err(std::io::Error::other)?;
+                seccomp_with(denied_hold()).map_err(std::io::Error::other)?;
                 Ok(())
             });
         }
