@@ -268,7 +268,12 @@ pub mod sandbox {
         unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS | libc::CLONE_NEWNET | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS) == 0 }
     }
 
-    fn rlimit(res: libc::__rlimit_resource_t, v: u64) {
+    #[cfg(target_env = "musl")]
+    type Res = libc::c_int;
+    #[cfg(not(target_env = "musl"))]
+    type Res = libc::__rlimit_resource_t;
+
+    fn rlimit(res: Res, v: u64) {
         let l = libc::rlimit { rlim_cur: v, rlim_max: v };
         unsafe {
             libc::setrlimit(res, &l);
