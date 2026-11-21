@@ -1,0 +1,68 @@
+{
+ "what": "live-devenv on foreman-ops-1, 2026-11-21: three ws-node services (N1 keys, N2 edge, N3 worker) on loopback, the CI aarch64 binary of the commit named per step, each a systemd unit at CPUQuota 50% MemoryMax 512M; a scoped test person t-c89c-dev signed with a test person key (not the gate's); the real gate path is in repo:dev-ws HANDOFF.md. Stopped after.",
+ "binary": {
+  "ws-node-aarch64 of 05500b5 (CI run 44906082075): the three nodes from L2 on, and hold": "98ef76df2f649625f2dfe81925eb96eadce02a7a95c93f60fd924b84191af7e0",
+  "ws-node-aarch64 of 3be4e85 (CI run 44904277344): the nodes for L1, L3, L4 and the mount": "00a0720da017e4c77aee99b4a17e3b953e5d5f3ad1af90517ca5eb790834a7ec"
+ },
+ "steps": [
+  {
+   "n": "L1",
+   "holds": true,
+   "what": "three services up, /status from each: same content_hash, N3 isolation ns+landlock+seccomp, N3 max_load 20"
+  },
+  {
+   "n": "L2",
+   "holds": true,
+   "what": "two Chromium pages (workspace.html#ws=scratch&path=docs/README.md), one through N1 at 1440 px, one through N2 at 390 px, both type into line 1: both show '# parser [typed via N2] [typed via N1]'; replicas N1 N2 N3 content_hash 3503d1a84ac9b01b; theme light; no horizontal overflow at 390",
+   "shots": [
+    "l2-n1-1440.png",
+    "l2-n2-390.png"
+   ]
+  },
+  {
+   "n": "L3",
+   "holds": true,
+   "what": "GET /session with no person header: 403; with a forged signature: 403; both are signed ws.gate Session refusal receipts (2 on every replica)"
+  },
+  {
+   "n": "L4",
+   "holds": true,
+   "what": "agent A2 (write docs/**, propose crates/**) through ws-node mount on N2: its edit of docs/README.md is in the shared tree, its edit of crates/parser/src/lib.rs is in its own change set 97e7835193f5 and not in the shared tree; A2 ReviewApprove refused (needs ws.review:approve)"
+  },
+  {
+   "n": "L5",
+   "holds": "partly",
+   "what": "BuildStart of the snapshot refused by ws.place at host load 37.5 (limit 20), a receipt on every replica; builds in boxes at ns+landlock+seccomp and the second-run cache hit are the CI sim proof (14 of 14) and proof/real-2026-11-21.json; not rerun here because ops-1 stayed above load 20"
+  },
+  {
+   "n": "L6",
+   "holds": "in tests",
+   "what": "Land through dev.ws: repo:dev-ws tests/cell.rs against a real ws-core node (refused before approval, refused without a green test of the snapshot, then committed through the commit tool and merged; twice refused). Not run against a real repo here."
+  },
+  {
+   "n": "L7",
+   "holds": true,
+   "what": "T3 Code 0.1.9 in ws-node hold (Landlock ABI 2 + seccomp, CPUQuota 200%, MemoryMax 4G, own HOME) on the mount's checkout: one turn (claude-haiku-5-5) added a line to crates/parser/src/util.rs; the mount sent it as A2's FsPatch: it is in change set 97e7835193f5, not in the shared tree. Pair scopes and the relay: repo:t3-cell tests (terminal:operate refused without t3:scope.terminal:operate)."
+  },
+  {
+   "n": "L8",
+   "holds": true,
+   "what": "N2 stopped, a file written through N1, N2 started: 'state restored ... (861 receipts)', all three content_hash 65f018db9bca08cb within 2 s"
+  },
+  {
+   "n": "L9",
+   "holds": true,
+   "what": "ws-node verify on each node's receipt log: N1 853, N2 854, N3 853 receipts in 3 chains, 5 refusals, every link and signature valid (receipts-N1.json)"
+  },
+  {
+   "n": "L10",
+   "holds": false,
+   "what": "the old t3code-main.service is retired only after the new instance answers through the gate (HANDOFF step 9)"
+  }
+ ],
+ "not_here": [
+  "the three real machines and the apps gate (HANDOFF to foreman/win-b591)",
+  "dev.ws and t3 behind the door",
+  "ce-scratch-devenv"
+ ]
+}
