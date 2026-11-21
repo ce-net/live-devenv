@@ -62,7 +62,7 @@ impl Sim {
     #[wasm_bindgen(constructor)]
     pub fn new(replay: &str) -> Sim {
         let mut s = build(replay);
-        proof::seed(&mut s.mesh, &mut s.people.h1);
+        proof::seed(&mut s.mesh, &mut s.people.h1, 2);
         s
     }
 

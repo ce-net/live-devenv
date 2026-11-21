@@ -127,12 +127,12 @@ fn same(v: &[String]) -> bool {
 }
 
 /// H1 seeds the workspace through N1 and registers the tool records it approves.
-pub fn seed(net: &mut dyn Net, h1: &mut Client) {
+pub fn seed(net: &mut dyn Net, h1: &mut Client, worker: usize) {
     for (path, text) in SAMPLE {
         let e = h1.env(json!({"op": "FsWrite", "path": path, "content": text}));
         net.call(0, &e);
     }
-    let worker_tools = net.status(2)["tools"].clone();
+    let worker_tools = net.status(worker)["tools"].clone();
     let rustc = worker_tools.get("rustc-test").and_then(|v| v.as_str()).unwrap_or("ref:ws.tools/bin/0000000000000000000000000000000000000000000000000000000000000000").to_string();
     let tools = [
         Tool { name: "rustc-test".into(), version: "1".into(), artifact: rustc, provides: vec!["compile:rust".into()], args: vec!["root".into(), "out".into()], network: false, secs: 300, memory_mb: 1024, wraps: "rustc (MIT OR Apache-2.0)".into() },
@@ -154,7 +154,7 @@ pub fn run(net: &mut dyn Net, p: &mut People, node_keys: Vec<String>, clock: &dy
         steps.push(StepResult { n, title: title.into(), must: must.into(), holds, detail, ms: clock().saturating_sub(t0) });
     };
 
-    seed(net, h1);
+    seed(net, h1, 2);
 
     // 1. three writers, three functions, one second, through N1, N2, N2
     let t0 = clock();

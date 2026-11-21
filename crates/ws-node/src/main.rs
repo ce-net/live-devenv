@@ -6,6 +6,7 @@
 //!   ws-node proof --net real --dir DIR [--out DIR]   the same proof against real nodes
 //!   ws-node verify FILE                              offline check of an exported receipt log
 //!   ws-node mcp --node URL --identity FILE           the agent door (MCP over stdio); no exec, no shell
+//!   ws-node seed --dir DIR [--worker I]                the sample tree and tool records, once
 //!   ws-node contract                                 print the generated contract
 
 mod http;
@@ -38,6 +39,17 @@ fn main() {
         Some("serve") => cmd_serve(&args),
         Some("verify") => cmd_verify(&args),
         Some("mcp") => cmd_mcp(&args),
+        Some("seed") => {
+            // seed a new workspace with the sample tree and the tool records, as one person, through node 0
+            let dir = PathBuf::from(arg(&args, "--dir").unwrap_or("tenant".into()));
+            let nodes: Vec<(String, String, String)> = serde_json::from_str(&std::fs::read_to_string(dir.join("nodes.json")).expect("nodes.json")).unwrap();
+            let worker: usize = arg(&args, "--worker").and_then(|w| w.parse().ok()).unwrap_or(0);
+            let mut me = load_identity(&dir.join(arg(&args, "--identity").unwrap_or("id-H1.json".into())));
+            let mut real = RealNet { urls: nodes.iter().map(|n| n.1.clone()).collect() };
+            proof::seed(&mut real, &mut me, worker);
+            println!("seeded: {}", real.status(0));
+            0
+        }
         Some("contract") => {
             println!("{}", serde_json::to_string_pretty(&ws_core::contract::contract_json()).unwrap());
             0
