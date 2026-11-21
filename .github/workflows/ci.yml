@@ -57,3 +57,25 @@ jobs:
         with:
           name: ws-node
           path: bin
+
+  site:
+    # the page a deployed node serves (ws-node serve with "site"): the same files as the Pages build, with the
+    # WebAssembly, as one tarball and its sha256 (HANDOFF.md names both)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: page with its WebAssembly
+        run: |
+          cargo build -p ws-wasm --target wasm32-unknown-unknown --release --locked
+          curl -sSL https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.130/wasm-bindgen-0.2.130-x86_64-unknown-linux-musl.tar.gz | tar xz
+          ./wasm-bindgen-0.2.130-x86_64-unknown-linux-musl/wasm-bindgen --target web --no-typescript --out-dir site/pkg target/wasm32-unknown-unknown/release/ws_wasm.wasm
+          mkdir -p out && tar -C site -czf out/ws-site.tar.gz . && sha256sum out/ws-site.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ws-site
+          path: out
