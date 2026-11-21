@@ -563,9 +563,19 @@ fn cmd_mount(args: &[String]) -> i32 {
     let sp = PathBuf::from(format!("{}.ws-mount.json", dir.display().to_string().trim_end_matches('/')));
     let mut st: mount::MountState = std::fs::read(&sp).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     eprintln!("mount {} as {} from {url}, every {every} ms", dir.display(), me.name);
+    // a round only when the workspace's content hash (GET /status, no receipt) or the directory changed, and at
+    // least once a minute: an idle mount costs no receipts
+    let (mut last_remote, mut last_local, mut last_round) = (String::new(), 0u64, std::time::Instant::now() - Duration::from_secs(3600));
     loop {
+        let remote = http::request("GET", &url, "/status", "", 10).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v["content_hash"].as_str().map(String::from)).unwrap_or_default();
+        let local = mount::local_sig(&dir);
+        if !once && remote == last_remote && local == last_local && last_round.elapsed() < Duration::from_secs(60) && !remote.is_empty() {
+            std::thread::sleep(Duration::from_millis(every));
+            continue;
+        }
         let mut call = |op: Value| post(&url, "/call", &json!(me.env(op)), 120).unwrap_or_else(|e| json!({"error": e}));
         let s = mount::once(&mut call, &dir, &mut st);
+        (last_remote, last_local, last_round) = (remote, mount::local_sig(&dir), std::time::Instant::now());
         if s != mount::Stats::default() {
             eprintln!("{s:?}");
             let tmp = sp.with_extension("tmp");

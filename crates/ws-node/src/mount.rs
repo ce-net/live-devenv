@@ -78,6 +78,24 @@ fn safe(rel: &str) -> bool {
     !rel.is_empty() && !rel.starts_with('/') && !rel.split('/').any(|c| c == ".." || c.is_empty())
 }
 
+/// A cheap signature of the directory (paths, sizes, mtimes): a round runs only when it or the workspace changed,
+/// so an idle mount writes no receipts.
+pub fn local_sig(root: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut files = vec![];
+    walk(root, root, &mut files);
+    files.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for f in files {
+        f.hash(&mut h);
+        if let Ok(m) = std::fs::metadata(root.join(&f)) {
+            m.len().hash(&mut h);
+            m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
 /// One round. `call` sends one op under the mount's identity and returns the node's answer as JSON.
 pub fn once(call: &mut dyn FnMut(Value) -> Value, root: &Path, st: &mut MountState) -> Stats {
     let mut s = Stats::default();

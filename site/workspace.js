@@ -43,9 +43,14 @@ async function push() {
   if (r.ok) { seen = now; $("#live").textContent = "Saved " + new Date().toLocaleTimeString() + (r.ok.change ? " to your change set " + r.ok.change : ""); await poll(); }
   else $("#live").textContent = "Not saved: " + (r.refused?.need || r.error);
 }
+let lastHash = "";
 async function poll() {
   if (!file || busy || document.hidden) return;
   const ed = $("#ed"); if (!ed) { clearInterval(pollT); return; }
+  // the replica's content hash first (GET status, no receipt): read the file only when the workspace changed
+  const st = await fetch("status").then((x) => x.json()).catch(() => ({}));
+  if (st.content_hash && st.content_hash === lastHash) return;
+  lastHash = st.content_hash || "";
   const r = await call({ op: "FsRead", path: file });
   if (!r.ok || r.ok.text === seen) { if (r.ok) version = r.ok.version; return; }
   const mine = diff(seen, ed.value);
