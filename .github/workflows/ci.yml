@@ -15,7 +15,9 @@ jobs:
       - name: generated contract (for comparison)
         run: mkdir -p ci-proof && target/release/ws-node contract > ci-proof/contract.json && cp Cargo.lock ci-proof/
       - name: unit, replica and sandbox tests; the generated contract matches the committed one
-        run: cargo test --workspace --release -- --nocapture 2>&1 | grep -v "^test " | tee ci-test.log; grep -q "test result: FAILED" ci-test.log && exit 1 || true
+        run: |
+          cargo test --workspace --release -- --nocapture 2>&1 | tee ci-test.log | grep -E "DIAG|test result|panicked|FAILED"
+          ! grep -q "test result: FAILED" ci-test.log
       - name: what the box can give on this runner
         run: sysctl kernel.apparmor_restrict_unprivileged_userns || true
       - name: the 14-step proof on the in-process mesh, with real boxed builds on the worker
