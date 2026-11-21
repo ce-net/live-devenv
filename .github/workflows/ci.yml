@@ -11,12 +11,12 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: build every crate
-        run: cargo build --workspace --release
+        run: cargo build --workspace --release --locked
       - name: generated contract (for comparison)
         run: mkdir -p ci-proof && target/release/ws-node contract > ci-proof/contract.json && cp Cargo.lock ci-proof/
       - name: unit, replica and sandbox tests; the generated contract matches the committed one
         run: |
-          cargo test --workspace --release -- --nocapture 2>&1 | tee ci-test.log | grep -E "DIAG|test result|panicked|FAILED"
+          cargo test --workspace --release --locked -- --nocapture 2>&1 | tee ci-test.log | grep -E "test result|panicked|FAILED"
           ! grep -q "test result: FAILED" ci-test.log
       - name: what the box can give on this runner
         run: sysctl kernel.apparmor_restrict_unprivileged_userns || true
@@ -34,3 +34,26 @@ jobs:
         with:
           name: ci-proof
           path: ci-proof
+
+  binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: static ws-node for x86_64 and aarch64 Linux
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+        run: |
+          cargo build --release --locked -p ws-node --target x86_64-unknown-linux-musl
+          cargo build --release --locked -p ws-node --target aarch64-unknown-linux-musl
+          mkdir -p bin && cp target/x86_64-unknown-linux-musl/release/ws-node bin/ws-node-x86_64 && cp target/aarch64-unknown-linux-musl/release/ws-node bin/ws-node-aarch64
+          sha256sum bin/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ws-node
+          path: bin

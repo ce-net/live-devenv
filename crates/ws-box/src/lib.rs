@@ -305,10 +305,9 @@ pub mod sandbox {
     }
 
     pub fn apply(cmd: &mut Command, s: Spec) -> Result<(), String> {
-        let want_ns = s.class == "ns+landlock+seccomp" && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-ns");
+        let want_ns = s.class == "ns+landlock+seccomp";
         let want = s.class != "none";
-        let want_ll = want && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-landlock");
-        let want_sc = want && std::env::var("WS_BOX_DIAG").map_or(true, |v| v != "no-seccomp");
+        let (want_ll, want_sc) = (want, want);
         unsafe {
             cmd.pre_exec(move || {
                 if want_ns && !ns() {
@@ -384,22 +383,24 @@ mod t {
 }
 
 #[cfg(all(test, target_os = "linux"))]
-mod diag {
+mod compile {
     use super::*;
+    /// rustc and the system linker work inside the strongest class this host gives.
     #[test]
-    fn rustc_inside_box() {
+    fn rustc_builds_inside_box() {
+        let class = sandbox::measure();
         let Some((rustc, sys)) = find_rustc() else { return };
-        for mode in ["full", "no-seccomp", "no-landlock", "no-ns"] {
-            std::env::set_var("WS_BOX_DIAG", mode);
-            let tmp = std::env::temp_dir().join(format!("ws-box-diag-{}-{mode}", std::process::id()));
-            std::fs::create_dir_all(&tmp).unwrap();
-            std::fs::write(tmp.join("a.rs"), "#[test] fn t() {}").unwrap();
-            let mut c = Command::new(&rustc);
-            c.args(["--edition", "2021", "--test", "a.rs", "-o", "a"]).current_dir(&tmp).env_clear().env("PATH", "/usr/bin:/bin").env("TMPDIR", &tmp).env("HOME", &tmp);
-            sandbox::apply(&mut c, sandbox::Spec { ro: vec![sys.clone()], rw: vec![tmp.clone()], class: "ns+landlock+seccomp".into(), memory_mb: 1024, secs: 60 }).unwrap();
-            let o = c.output().unwrap();
-            eprintln!("DIAG {mode}: exit {:?} {}", o.status.code(), String::from_utf8_lossy(&o.stderr).lines().take(3).collect::<Vec<_>>().join(" / "));
+        if class == "none" {
+            return;
         }
-        std::env::remove_var("WS_BOX_DIAG");
+        let tmp = std::env::temp_dir().join(format!("ws-box-rustc-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.rs"), "#[test] fn t() {}").unwrap();
+        let mut c = Command::new(&rustc);
+        c.args(["--edition", "2021", "--test", "a.rs", "-o", "a"]).current_dir(&tmp).env_clear().env("PATH", "/usr/bin:/bin").env("TMPDIR", &tmp).env("HOME", &tmp);
+        sandbox::apply(&mut c, sandbox::Spec { ro: vec![sys], rw: vec![tmp.clone()], class: class.clone(), memory_mb: 1024, secs: 120 }).unwrap();
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "{class}: {}", String::from_utf8_lossy(&o.stderr));
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
