@@ -6,10 +6,12 @@
 //!   ws-node proof --net real --dir DIR [--out DIR]   the same proof against real nodes
 //!   ws-node verify FILE                              offline check of an exported receipt log
 //!   ws-node mcp --node URL --identity FILE           the agent door (MCP over stdio); no exec, no shell
+//!   ws-node mount --node URL --identity FILE --dir DIR [--every MS]   a directory kept in step with the workspace
 //!   ws-node seed --dir DIR [--worker I]                the sample tree and tool records, once
 //!   ws-node contract                                 print the generated contract
 
 mod http;
+mod mount;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -39,6 +41,7 @@ fn main() {
         Some("serve") => cmd_serve(&args),
         Some("verify") => cmd_verify(&args),
         Some("mcp") => cmd_mcp(&args),
+        Some("mount") => cmd_mount(&args),
         Some("seed") => {
             // seed a new workspace with the sample tree and the tool records, as one person, through node 0
             let dir = PathBuf::from(arg(&args, "--dir").unwrap_or("tenant".into()));
@@ -170,6 +173,9 @@ struct NodeConfig {
     /// /tick and /cut, for the proof driver only; off on a deployed node.
     #[serde(default)]
     test_controls: bool,
+    /// A worker starts no box while the host's 1-minute load is above this (0 = no limit).
+    #[serde(default)]
+    max_load: f64,
 }
 
 fn default_class() -> String {
@@ -225,6 +231,7 @@ fn cmd_init(args: &[String]) -> i32 {
             person_key_file: None,
             keys_node: 0,
             test_controls: !private,
+            max_load: if private && *name == worker { 20.0 } else { 0.0 },
         };
         std::fs::write(out.join(format!("{name}.json")), serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
         nodes.push((name.clone(), url.clone(), t.node_keys[i].pk()));
@@ -333,6 +340,25 @@ fn save(n: &Node, path: &Option<String>) {
     }
 }
 
+/// The host's 1-minute load average; 0 where /proc/loadavg is missing.
+fn host_load() -> f64 {
+    std::fs::read_to_string("/proc/loadavg").ok().and_then(|s| s.split_whitespace().next().and_then(|x| x.parse().ok())).unwrap_or(0.0)
+}
+
+/// Load a node's saved state (written by [`save`]) back into it; false when there is none or it does not parse.
+fn restore(node: &mut Node, path: &str) -> bool {
+    let Ok(s) = std::fs::read(path) else { return false };
+    let Ok(st) = serde_json::from_slice::<State>(&s) else { return false };
+    node.fs = st.fs;
+    node.audit = st.audit;
+    node.revoked = st.revoked;
+    node.tools = st.tools;
+    node.changes = st.changes;
+    node.commits = st.commits;
+    node.derived = st.derived;
+    true
+}
+
 fn cmd_serve(args: &[String]) -> i32 {
     let path = args.get(1).expect("serve CONFIG");
     let cfg: NodeConfig = serde_json::from_str(&std::fs::read_to_string(path).expect("config")).expect("config json");
@@ -346,17 +372,12 @@ fn cmd_serve(args: &[String]) -> i32 {
         node.people = cfg.people.clone();
     }
     let person_key: Option<Vec<u8>> = cfg.person_key_file.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|s| ws_core::unhex(s.trim()));
+    if cfg.max_load > 0.0 {
+        node.max_load = cfg.max_load;
+    }
     if let Some(sp) = &cfg.state {
-        if let Ok(s) = std::fs::read(sp) {
-            if let Ok(st) = serde_json::from_slice::<State>(&s) {
-                node.fs = st.fs;
-                node.audit = st.audit;
-                node.revoked = st.revoked;
-                node.tools = st.tools;
-                node.changes = st.changes;
-                node.commits = st.commits;
-                node.derived = st.derived;
-            }
+        if restore(&mut node, sp) {
+            eprintln!("{}: state restored from {sp} ({} receipts)", cfg.name, node.audit.len());
         }
     }
     eprintln!("{} listening on {} (isolation {}, tools {:?})", cfg.name, cfg.listen, node.runner.isolation(), node.runner.tools().keys().collect::<Vec<_>>());
@@ -406,6 +427,7 @@ fn cmd_serve(args: &[String]) -> i32 {
                     match g.as_mut() {
                         Some(n) => {
                             n.now = now_ms();
+                            n.load = host_load();
                             let a = n.handle(&env, &mut net);
                             save(n, &state);
                             a
@@ -446,17 +468,24 @@ fn cmd_serve(args: &[String]) -> i32 {
             }
             ("GET", "/status") => {
                 let n = node.lock().unwrap();
-                (200, "application/json", json!({"name": n.name, "boxes_started": n.boxes_started, "content_hash": n.fs.content_hash(), "conflicts": n.fs.conflicts("").len(), "receipts": n.audit.len(), "isolation": n.runner.isolation(), "tools": n.runner.tools(), "rejected": n.rejected.len(), "key": n.pk()}).to_string().into())
+                (200, "application/json", json!({"name": n.name, "version": env!("CARGO_PKG_VERSION"), "load": host_load(), "max_load": if n.max_load.is_finite() { Some(n.max_load) } else { None }, "boxes_started": n.boxes_started, "content_hash": n.fs.content_hash(), "conflicts": n.fs.conflicts("").len(), "receipts": n.audit.len(), "isolation": n.runner.isolation(), "tools": n.runner.tools(), "rejected": n.rejected.len(), "key": n.pk()}).to_string().into())
             }
             ("GET", "/session") => {
                 // a person signed in at the apps gate: the gate's signed person header, checked here, then ws.keys
                 // issues an 8-hour chain to the browser's own key. The browser key never leaves the browser.
+                let refuse = |claimed: &str, need: &str, msg: &str| -> http::Reply {
+                    let mut n = node.lock().unwrap();
+                    n.now = now_ms();
+                    n.refuse_at_door("Session", claimed, need);
+                    save(&n, &state);
+                    (403, "application/json", json!({"error": msg}).to_string().into_bytes())
+                };
                 let (Some(person), Some(at), Some(sig), Some(key)) = (req.header("X-Ce-Person"), req.header("X-Ce-Person-At"), req.header("X-Ce-Person-Sig"), person_key.as_ref()) else {
-                    return (403, "application/json", json!({"error": "sign in at apps.ce-net.com first"}).to_string().into());
+                    return refuse(req.header("X-Ce-Person").unwrap_or(""), "a signed person header from the apps gate", "sign in at apps.ce-net.com first");
                 };
                 let fresh = at.parse::<u64>().map(|t| (now_ms() / 1000).abs_diff(t) < 300).unwrap_or(false);
                 if !fresh || !person_sig_ok(key, person, at, sig) {
-                    return (403, "application/json", json!({"error": "the signed person header does not verify"}).to_string().into());
+                    return refuse(person, "a signed person header that verifies and is fresh", "the signed person header does not verify");
                 }
                 let Some(pk) = req.q("pk").filter(|p| p.len() == 64 && ws_core::unhex(p).is_some()) else {
                     return (400, "application/json", json!({"error": "pk"}).to_string().into());
@@ -520,6 +549,35 @@ fn cmd_verify(args: &[String]) -> i32 {
     }
 }
 
+/// `mount`: one directory in step with the workspace under one identity (see mount.rs). State lives beside the
+/// directory in `<dir>.ws-mount.json` so a restart does not mistake its own writes for local edits.
+fn cmd_mount(args: &[String]) -> i32 {
+    let url = arg(args, "--node").expect("--node URL");
+    let mut me = load_identity(Path::new(&arg(args, "--identity").expect("--identity FILE")));
+    let dir = PathBuf::from(arg(args, "--dir").expect("--dir DIR"));
+    let every: u64 = arg(args, "--every").and_then(|x| x.parse().ok()).unwrap_or(1000);
+    let once = args.iter().any(|a| a == "--once");
+    std::fs::create_dir_all(&dir).expect("mount dir");
+    let sp = PathBuf::from(format!("{}.ws-mount.json", dir.display().to_string().trim_end_matches('/')));
+    let mut st: mount::MountState = std::fs::read(&sp).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    eprintln!("mount {} as {} from {url}, every {every} ms", dir.display(), me.name);
+    loop {
+        let mut call = |op: Value| post(&url, "/call", &json!(me.env(op)), 120).unwrap_or_else(|e| json!({"error": e}));
+        let s = mount::once(&mut call, &dir, &mut st);
+        if s != mount::Stats::default() {
+            eprintln!("{s:?}");
+            let tmp = sp.with_extension("tmp");
+            if std::fs::write(&tmp, serde_json::to_vec(&st).unwrap()).is_ok() {
+                std::fs::rename(&tmp, &sp).ok();
+            }
+        }
+        if once {
+            return 0;
+        }
+        std::thread::sleep(Duration::from_millis(every));
+    }
+}
+
 /// MCP over stdio. The session is bound to one identity's chain; the tool list is filtered by it.
 fn cmd_mcp(args: &[String]) -> i32 {
     use std::io::{BufRead, Write};
@@ -560,4 +618,123 @@ fn cmd_mcp(args: &[String]) -> i32 {
         }
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ws_core::node::NoRunner;
+    use ws_core::sim::Tenant;
+
+    /// A deployed node writes its state after each request; a restarted node reads it back unchanged.
+    #[test]
+    fn state_survives_a_restart() {
+        let mut t = Tenant::new(b"r/root", &[("N1", b"r/N1".to_vec())], 1_000);
+        let mut p = proof::people(&mut t, 1_000);
+        let mut a = t.node(0, Box::new(NoRunner));
+        a.now = 2_000;
+        struct NoNet;
+        impl Remote for NoNet {
+            fn call(&mut self, _: usize, _: &Envelope) -> Answer {
+                Answer::Error("no net".into())
+            }
+        }
+        let e = p.h1.env(json!({"op": "FsWrite", "path": "notes/a.txt", "content": "one line\n"}));
+        assert!(a.handle(&e, &mut NoNet).ok().is_some());
+        a.refuse_at_door("Session", "", "a signed person header");
+        let dir = std::env::temp_dir().join(format!("ws-restart-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.json").display().to_string();
+        save(&a, &Some(path.clone()));
+        let mut b = t.node(0, Box::new(NoRunner));
+        assert!(restore(&mut b, &path));
+        assert_eq!(a.fs.content_hash(), b.fs.content_hash());
+        assert_eq!(a.audit.len(), b.audit.len());
+        assert!(verify_log(&b.audit.all(), &[b.pk()]).ok);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod mount_tests {
+    use super::*;
+    use ws_core::gate::Grant;
+    use ws_core::node::NoRunner;
+    use ws_core::sim::Tenant;
+
+    struct NoNet;
+    impl Remote for NoNet {
+        fn call(&mut self, _: usize, _: &Envelope) -> Answer {
+            Answer::Error("no net".into())
+        }
+    }
+
+    fn tmp(n: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ws-mount-{n}-{}", std::process::id()));
+        std::fs::remove_dir_all(&d).ok();
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn mount_syncs_both_ways_hides_unreadable_paths_and_proposes_under_its_own_chain() {
+        let now = 1_000;
+        let mut t = Tenant::new(b"m/root", &[("N1", b"m/N1".to_vec())], now);
+        let mut p = proof::people(&mut t, now);
+        let mut agent = t.agent(&p.h1, "T3", b"m/T3", vec![Grant::new("ws.fs:read").paths(&["src/**"]), Grant::new("ws.fs:propose").paths(&["src/**"])], now);
+        let mut n = t.node(0, Box::new(NoRunner));
+        n.dir = t.dir.clone();
+        n.now = 2_000;
+        let mut as_ = |n: &mut Node, c: &mut Client, op: Value| serde_json::to_value(n.handle(&c.env(op), &mut NoNet)).unwrap();
+        assert!(as_(&mut n, &mut p.h1, json!({"op": "FsWrite", "path": "src/a.rs", "content": "fn a() {}\n"}))["ok"].is_object());
+        assert!(as_(&mut n, &mut p.h1, json!({"op": "FsWrite", "path": "secret/k.txt", "content": "s3cret\n"}))["ok"].is_object());
+
+        // the agent's mount: readable files only
+        let da = tmp("agent");
+        let mut sa = mount::MountState::default();
+        let s = mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        assert_eq!(s.pulled, 1);
+        assert_eq!(std::fs::read_to_string(da.join("src/a.rs")).unwrap(), "fn a() {}\n");
+        assert!(!da.join("secret").exists(), "an unreadable path is never written");
+
+        // a person's mount with write: local edit lands in the shared tree
+        let dh = tmp("person");
+        let mut sh = mount::MountState::default();
+        mount::once(&mut |op| as_(&mut n, &mut p.h1, op), &dh, &mut sh);
+        assert!(dh.join("secret/k.txt").exists());
+        std::fs::write(dh.join("src/a.rs"), "fn a() { 1 }\n").unwrap();
+        let s = mount::once(&mut |op| as_(&mut n, &mut p.h1, op), &dh, &mut sh);
+        assert_eq!(s.shared, 1);
+        let shared = |n: &mut Node, h1: &mut Client| as_(n, h1, json!({"op": "FsRead", "path": "src/a.rs"}))["ok"]["text"].as_str().unwrap().to_string();
+        assert_eq!(shared(&mut n, &mut p.h1), "fn a() { 1 }\n");
+
+        // remote change reaches the agent's directory
+        let s = mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        assert_eq!(s.pulled, 1);
+        assert_eq!(std::fs::read_to_string(da.join("src/a.rs")).unwrap(), "fn a() { 1 }\n");
+
+        // the agent edits on disk: it goes to its own change set, the shared tree is unchanged
+        std::fs::write(da.join("src/a.rs"), "fn a() { 2 }\n").unwrap();
+        let s = mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        assert_eq!(s.proposed, 1, "{s:?}");
+        assert_eq!(shared(&mut n, &mut p.h1), "fn a() { 1 }\n");
+        std::fs::write(da.join("src/a.rs"), "fn a() { 3 }\n").unwrap();
+        mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        let cs: Vec<_> = n.changes.values().filter(|c| c.owner == agent.pk()).collect();
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].files["src/a.rs"].text, "fn a() { 3 }\n");
+
+        // a new file outside its paths is refused once, not every round
+        std::fs::write(da.join("notes.txt"), "x").unwrap();
+        let s = mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        assert_eq!(s.refused, 1);
+        let s = mount::once(&mut |op| as_(&mut n, &mut agent, op), &da, &mut sa);
+        assert_eq!(s.refused, 0);
+        assert!(n.audit.all().iter().any(|r| matches!(r.outcome, ws_core::audit::Outcome::Refused { .. }) && r.target == "notes.txt"));
+
+        // the person's own untouched copy follows; their local edit was not overwritten by the agent's proposal
+        assert_eq!(std::fs::read_to_string(dh.join("src/a.rs")).unwrap(), "fn a() { 1 }\n");
+        std::fs::remove_dir_all(&da).ok();
+        std::fs::remove_dir_all(&dh).ok();
+    }
 }

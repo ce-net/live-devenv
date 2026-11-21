@@ -322,6 +322,8 @@ pub mod sandbox {
                 if want_ns && !ns() {
                     return Err(std::io::Error::other("namespaces"));
                 }
+                // a box never competes with its host at normal priority (shared worker, nice 10)
+                libc::setpriority(libc::PRIO_PROCESS, 0, 10);
                 rlimit(libc::RLIMIT_CPU, s.secs);
                 rlimit(libc::RLIMIT_FSIZE, 512 << 20);
                 rlimit(libc::RLIMIT_AS, (s.memory_mb.max(512) * 4) << 20);

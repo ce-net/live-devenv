@@ -140,6 +140,10 @@ pub struct Node {
     /// Only on the node that holds `ws.keys` in a deployment where people sign in: the tenant root and who may.
     pub root_key: Option<Key>,
     pub people: BTreeMap<String, String>,
+    /// The host's 1-minute load average, set by the serving loop before each request (0 in the sim and the page).
+    pub load: f64,
+    /// `ws.place` refuses a new box while `load` is above this (a shared worker must not starve its host).
+    pub max_load: f64,
     nonce: u64,
 }
 
@@ -174,6 +178,8 @@ impl Node {
             rejected: vec![],
             root_key: None,
             people: BTreeMap::new(),
+            load: 0.0,
+            max_load: f64::INFINITY,
             nonce: 0,
         }
     }
@@ -200,6 +206,15 @@ impl Node {
         let args = h(env.op.to_string().as_bytes());
         let chain = env.chain.id();
         self.audit.append(&self.key, t, Draft { cell, op, actor: &actor, chain: &chain, target, args: &args, outcome });
+    }
+
+    /// A refusal at the node's door (no or a forged person header on `GET /session`): no envelope exists, so the
+    /// receipt names the claimed person and an empty chain. It is a row in this node's signed chain like any other.
+    pub fn refuse_at_door(&mut self, op: &str, claimed: &str, need: &str) {
+        let t = self.hlc();
+        let args = h(format!("{op}|{claimed}").as_bytes());
+        let actor = if claimed.is_empty() { "unsigned".to_string() } else { format!("claimed:{claimed}") };
+        self.audit.append(&self.key, t, Draft { cell: "ws.gate", op, actor: &actor, chain: "", target: "/session", args: &args, outcome: Outcome::Refused { need: need.into() } });
     }
 
     pub fn sign(&mut self, op: Value) -> Envelope {
@@ -717,6 +732,9 @@ impl Node {
             r.cache = s("hit");
             return Answer::Ok(json!({"receipt": r, "manifest": man, "blobs": {}, "stdout": ""}));
         }
+        if self.load > self.max_load {
+            return Answer::Refused(Refused { need: format!("host load at most {}", self.max_load), have: vec![format!("load {:.1}", self.load)], why: s("the worker is busy; ws.place starts no box while its host is above the load limit") });
+        }
         if req.network && !req.tool.network {
             return Answer::Refused(Refused { need: s("network inside a run box"), have: env.chain.have(), why: s("the tool record says network: none") });
         }
@@ -869,5 +887,69 @@ fn op_target(op: &Op) -> String {
         Op::ToolsRegister { tool } => tool.name.clone(),
         Op::ToolsFind { capability } => capability.clone(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cells::{RunOut, RunReq, Tool};
+    use crate::sim::Tenant;
+
+    struct Fake;
+    impl Runner for Fake {
+        fn isolation(&self) -> String {
+            "ns+landlock+seccomp".into()
+        }
+        fn tools(&self) -> BTreeMap<String, String> {
+            BTreeMap::new()
+        }
+        fn run(&mut self, _: &RunReq, _: &[(String, Vec<u8>)]) -> Result<RunOut, String> {
+            Ok(RunOut { exit: 0, stdout: "ok".into(), isolation: "ns+landlock+seccomp".into(), ..Default::default() })
+        }
+    }
+
+    struct NoNet;
+    impl Remote for NoNet {
+        fn call(&mut self, _: usize, _: &Envelope) -> Answer {
+            Answer::Error("no net".into())
+        }
+    }
+
+    fn run_env(n: &mut Node, input: &str) -> Envelope {
+        let tool = Tool { name: "t".into(), version: "1".into(), artifact: "input:bin".into(), provides: vec![], args: vec![], network: false, secs: 5, memory_mb: 64, wraps: String::new() };
+        let req = RunReq { tool, args: json!([]), input: input.into(), manifest: vec![], blobs: BTreeMap::new(), network: false, actor: "x".into(), min_class: "ns+landlock+seccomp".into() };
+        n.sign(json!({"op": "RunStart", "req": req}))
+    }
+
+    #[test]
+    fn place_refuses_a_box_while_the_host_is_loaded_and_records_it() {
+        let t = Tenant::new(b"t/root", &[("N1", b"t/N1".to_vec())], 1_000);
+        let mut n = t.node(0, Box::new(Fake));
+        n.now = 2_000;
+        n.max_load = 20.0;
+        n.load = 51.5;
+        let e = run_env(&mut n, "a");
+        let before = n.audit.len();
+        let a = n.handle(&e, &mut NoNet);
+        assert!(a.is_refused(), "{a:?}");
+        assert_eq!(n.boxes_started, 0);
+        assert_eq!(n.audit.len(), before + 1);
+        n.load = 3.0;
+        let e = run_env(&mut n, "a");
+        assert!(n.handle(&e, &mut NoNet).ok().is_some());
+        assert_eq!(n.boxes_started, 1);
+    }
+
+    #[test]
+    fn door_refusals_are_signed_receipts() {
+        let t = Tenant::new(b"t/root", &[("N1", b"t/N1".to_vec())], 1_000);
+        let mut n = t.node(0, Box::new(Fake));
+        n.refuse_at_door("Session", "", "a signed person header");
+        n.refuse_at_door("Session", "mallory", "a signed person header that verifies");
+        assert_eq!(n.audit.len(), 2);
+        let keys = vec![n.pk()];
+        let r = crate::audit::verify_log(&n.audit.all(), &keys);
+        assert!(r.ok && r.refused == 2, "{:?}", r.errors);
     }
 }
