@@ -1,0 +1,10 @@
+[workspace]
+name = "parser"
+
+[[build]]
+target = "crates/parser"
+uses = "compile:rust"
+
+[[test]]
+bin = "out/test"
+uses = "test:rust"

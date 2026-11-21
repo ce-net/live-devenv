@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["crates/ws-core", "crates/ws-box", "crates/ws-node", "crates/ws-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Leif Rydenfalk"]
+repository = "https://github.com/ce-net/live-devenv"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = { version = "1.8", default-features = false, features = ["pure"] }
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
+
+[profile.dev]
+debug = 0
+
+[profile.release]
+debug = 0
+opt-level = 2

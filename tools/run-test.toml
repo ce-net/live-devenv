@@ -1,0 +1,9 @@
+# Runs a test binary built by rustc-test; the program is an artifact of the input snapshot.
+name = "run-test"
+version = "1"
+artifact = "input:bin"
+provides = ["test:rust"]
+args = ["bin"]
+network = false
+secs = 120
+memory_mb = 256

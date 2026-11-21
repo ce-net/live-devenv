@@ -1,0 +1,9 @@
+# Compiles one crate root with its unit tests into out/test. The program is named by hash at registration.
+name = "rustc-test"
+version = "1"
+provides = ["compile:rust"]
+args = ["root", "out"]
+network = false
+secs = 300
+memory_mb = 1024
+wraps = "rustc (MIT OR Apache-2.0)"

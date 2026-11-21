@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>live-devenv</title>
+<meta name="description" content="A development workspace where files, builds, tests, tools, reviews and receipts are cells with typed contracts. Three nodes, two people, two agents.">
+<link rel="stylesheet" href="https://design.ce-net.com/v1/tokens.css">
+<link rel="stylesheet" href="https://design.ce-net.com/v1/components.css">
+<script src="https://design.ce-net.com/v1/theme.js"></script>
+<link rel="icon" href="https://design.ce-net.com/v1/logo/ce-net-favicon-light.svg" type="image/svg+xml">
+<meta name="theme-color" content="#f2f2ee">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="crumb">ce-net / live systems / <b>live-devenv</b></div>
+    <h1 class="display">A workspace made of cells.</h1>
+    <p class="lede">One workspace shared by people and agents on three nodes. Files, builds, tests, tools, reviews and the record of who did what are cells with typed contracts. No op takes a command line: every edit and run is checked against the caller's capability chain, runs in a box, and leaves a signed, hash-linked receipt.</p>
+    <nav class="modes" role="tablist">
+      <button role="tab" data-mode="recorded" aria-selected="true">Recorded run</button>
+      <button role="tab" data-mode="sim" aria-selected="false">Sim</button>
+      <a href="https://github.com/ce-net/live-devenv">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="recorded" class="mode">
+    <div class="bar">
+      <div>
+        <h2>The real run on three nodes</h2>
+        <p class="dim" id="rec-meta">Loading the recorded run.</p>
+      </div>
+      <button id="rec-verify" class="btn">Verify every receipt here</button>
+    </div>
+    <p id="rec-verdict" class="verdict" hidden></p>
+    <div class="nodes" id="rec-nodes"></div>
+    <table class="steps"><thead><tr><th>#</th><th>Step</th><th>Must hold</th><th>Result</th><th class="num">ms</th></tr></thead><tbody id="rec-steps"></tbody></table>
+    <p class="dim small">Raw files: <a id="rec-json" href="proof/">proof/</a>. Each receipt names its node, the cell that decided, the actor, the chain and the outcome; each is signed by its node and links by hash to the one before.</p>
+  </section>
+
+  <section id="sim" class="mode" hidden>
+    <div class="bar">
+      <div>
+        <h2>Three nodes in this tab</h2>
+        <p class="dim">The real <code>ws.fs</code>, <code>ws.presence</code>, <code>ws.review</code>, <code>ws.audit</code> and gate, compiled to WebAssembly. You type as H1. Cut a node off, type on both sides, reconnect. Builds and tests cannot run in a tab: the worker replays runs recorded on a real worker, and their receipts say <em>replayed</em>.</p>
+      </div>
+      <div class="actions">
+        <label class="small"><input type="checkbox" id="auto" checked> sync every 0.8 s</label>
+        <button id="sync" class="btn ghost">Sync now</button>
+        <button id="run14" class="btn">Run the 14 steps</button>
+      </div>
+    </div>
+    <div class="grid3" id="sim-nodes"></div>
+    <div class="split">
+      <div>
+        <h3>Views the viewer may render</h3>
+        <p class="dim small">The page has no list of tabs. <code>ws.ui</code> answers the views whose right the viewer's chain holds.</p>
+        <div class="viewas"><button class="btn ghost on" data-who="H1">as H1 (person)</button><button class="btn ghost" data-who="A2">as A2 (agent)</button></div>
+        <ul class="tabs" id="layout"></ul>
+        <h3>Try a refused op</h3>
+        <div class="viewas"><button class="btn ghost" id="try-ci">A1 writes .github/workflows/ci.yml</button><button class="btn ghost" id="try-toml">A2 writes ws.toml</button></div>
+        <pre class="answer" id="try-out">The answer appears here.</pre>
+      </div>
+      <div>
+        <h3>Receipts on N1</h3>
+        <ol class="receipts" id="receipts"></ol>
+      </div>
+    </div>
+    <table class="steps" id="sim-steps-t" hidden><thead><tr><th>#</th><th>Step</th><th>Must hold</th><th>Result</th><th class="num">ms</th></tr></thead><tbody id="sim-steps"></tbody></table>
+  </section>
+</main>
+<footer class="wrap dim small">Apache-2.0. Contract: <a href="contract.json">contract.json</a> (generated from the Rust contracts). <button class="link" data-ce-theme-toggle>Light / dark</button></footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>

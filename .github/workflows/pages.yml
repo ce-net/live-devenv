@@ -1,0 +1,45 @@
+name: pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: the cells as WebAssembly
+        run: |
+          cargo build -p ws-wasm --target wasm32-unknown-unknown --release
+          curl -sSL https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.130/wasm-bindgen-0.2.130-x86_64-unknown-linux-musl.tar.gz | tar xz
+          ./wasm-bindgen-0.2.130-x86_64-unknown-linux-musl/wasm-bindgen --target web --no-typescript --out-dir site/pkg target/wasm32-unknown-unknown/release/ws_wasm.wasm
+      - name: assemble the page (sim mode runs in the browser; the recorded run is read from proof/)
+        run: |
+          mkdir -p _site
+          cp -r site/* _site/
+          cp -r proof _site/proof
+          cp proof/sim-runs.json _site/sim-runs.json 2>/dev/null || echo "[]" > _site/sim-runs.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

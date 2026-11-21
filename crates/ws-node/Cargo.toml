@@ -1,0 +1,18 @@
+[package]
+name = "ws-node"
+description = "A live-devenv node (cells over HTTP), the gateway, the proof driver, the MCP door and the offline verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ws-node"
+path = "src/main.rs"
+
+[dependencies]
+ws-core = { path = "../ws-core" }
+ws-box = { path = "../ws-box" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+hmac = "0.12"

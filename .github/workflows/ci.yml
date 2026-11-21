@@ -1,0 +1,34 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build-test-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: build every crate
+        run: cargo build --workspace --release
+      - name: generated contract (for comparison)
+        run: mkdir -p ci-proof && target/release/ws-node contract > ci-proof/contract.json && cp Cargo.lock ci-proof/
+      - name: unit, replica and sandbox tests; the generated contract matches the committed one
+        run: cargo test --workspace --release
+      - name: what the box can give on this runner
+        run: sysctl kernel.apparmor_restrict_unprivileged_userns || true
+      - name: the 14-step proof on the in-process mesh, with real boxed builds on the worker
+        # GitHub's runners refuse unprivileged user namespaces (AppArmor), so the workspace minimum there is
+        # landlock+seccomp; on the fleet nodes it is ns+landlock+seccomp.
+        run: |
+          if unshare -Ur true 2>/dev/null; then export WS_MIN_CLASS=ns+landlock+seccomp; else export WS_MIN_CLASS=landlock+seccomp; fi
+          target/release/ws-node proof --net sim --out ci-proof
+          target/release/ws-node verify ci-proof/sim.json
+      - name: the page's WebAssembly builds
+        run: cargo build -p ws-wasm --target wasm32-unknown-unknown --release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-proof
+          path: ci-proof
