@@ -68,8 +68,9 @@ pub struct Directory {
     pub names: BTreeMap<String, String>,
 }
 
+/// Ops arrive as `{"op": "<Name>", ...fields}` and are read as `{"<Name>": {...fields}}`: serde's internally
+/// tagged form buffers its content and then cannot read maps with integer keys (version vectors).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "op")]
 pub enum Op {
     FsList { #[serde(default)] prefix: String },
     FsOpen { path: String },
@@ -236,7 +237,9 @@ impl Node {
             self.receipt(env, "ws.gate", &opname, "", Outcome::Refused { need: r.need.clone() });
             return Answer::Refused(r);
         }
-        let op: Op = match serde_json::from_value(env.op.clone()) {
+        let mut fields = env.op.as_object().cloned().unwrap_or_default();
+        fields.remove("op");
+        let op: Op = match serde_json::from_value(json!({ opname.clone(): fields })) {
             Ok(o) => o,
             Err(e) => return Answer::Error(format!("not an op of live-devenv@1: {e}")),
         };
