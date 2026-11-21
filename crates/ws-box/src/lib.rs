@@ -380,3 +380,20 @@ mod t {
         std::fs::remove_dir_all(&tmp).ok();
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod diag {
+    use super::*;
+    #[test]
+    fn spawn_inside_box() {
+        for class in ["ns+landlock+seccomp", "landlock+seccomp"] {
+            let tmp = std::env::temp_dir().join(format!("ws-box-diag-{}-{}", std::process::id(), class.len()));
+            std::fs::create_dir_all(&tmp).unwrap();
+            let mut c = Command::new("/bin/sh");
+            c.arg("-c").arg("/usr/bin/true && echo spawn-ok; cc --version >/dev/null 2>&1 && echo cc-ok || echo cc-fail-$?; cc --version 2>&1 | head -2").env_clear().env("PATH", "/usr/bin:/bin").env("TMPDIR", &tmp);
+            sandbox::apply(&mut c, sandbox::Spec { ro: vec![], rw: vec![tmp.clone()], class: class.into(), memory_mb: 1024, secs: 10 }).unwrap();
+            let o = c.output().unwrap();
+            eprintln!("DIAG {class}: {} | {}", String::from_utf8_lossy(&o.stdout).replace('\n', " / "), String::from_utf8_lossy(&o.stderr).replace('\n', " / "));
+        }
+    }
+}
