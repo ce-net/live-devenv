@@ -2,3 +2,4 @@ target/
 node-run-out/
 /site/pkg/
 /ci-proof/
+.job.sh

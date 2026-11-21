@@ -41,7 +41,7 @@ pub trait Remote {
 }
 
 /// Runs one tool in a box. Native nodes use `ws-box`; the browser replays recorded runs and says so.
-pub trait Runner {
+pub trait Runner: Send {
     fn isolation(&self) -> String;
     fn tools(&self) -> BTreeMap<String, String>;
     fn run(&mut self, req: &RunReq, files: &[(String, Vec<u8>)]) -> Result<RunOut, String>;
