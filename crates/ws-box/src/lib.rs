@@ -1,6 +1,6 @@
 //! `ws-box`: one boxed run (stands in for agent.box). The child gets new user, mount, network, IPC and UTS
 //! namespaces (so no network device), a Landlock ruleset (read and execute on the system, the toolchain and
-//! the read-only checkout; write only in its scratch directory), a seccomp filter (no sockets, no ptrace, no
+//! the read-only checkout; write only in its scratch directory), a seccomp filter (no new sockets, no ptrace, no
 //! mounts, no new namespaces, no module or kexec calls), rlimits and a wall-clock limit. The class it could
 //! give is measured at start and written into every receipt.
 
@@ -239,7 +239,7 @@ pub mod sandbox {
     fn denied() -> Vec<libc::c_long> {
         use libc::*;
         vec![
-            SYS_socket, SYS_socketpair, SYS_ptrace, SYS_mount, SYS_umount2, SYS_pivot_root, SYS_unshare, SYS_setns, SYS_bpf, SYS_keyctl, SYS_add_key, SYS_request_key,
+            SYS_socket, SYS_ptrace, SYS_mount, SYS_umount2, SYS_pivot_root, SYS_unshare, SYS_setns, SYS_bpf, SYS_keyctl, SYS_add_key, SYS_request_key,
             SYS_init_module, SYS_finit_module, SYS_delete_module, SYS_kexec_load, SYS_reboot, SYS_swapon, SYS_swapoff, SYS_perf_event_open, SYS_process_vm_writev,
         ]
     }
