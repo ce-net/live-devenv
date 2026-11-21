@@ -199,7 +199,12 @@ pub mod sandbox {
     const SYS_RO: &[&str] = &["/usr", "/lib", "/lib64", "/bin", "/etc", "/proc", "/sys/devices/system/cpu"];
 
     fn landlock(ro: &[PathBuf], rw: &[PathBuf]) -> Result<bool, String> {
-        let abi = ABI::V1;
+        landlock_abi(ro, rw, ABI::V1)
+    }
+
+    /// `abi` V2 adds Refer on the writable paths: a held program renames and links inside them (T3 Code writes its
+    /// state with link-then-rename), which V1 always refuses with EXDEV.
+    fn landlock_abi(ro: &[PathBuf], rw: &[PathBuf], abi: ABI) -> Result<bool, String> {
         let mut ro: Vec<PathBuf> = ro.to_vec();
         ro.extend(SYS_RO.iter().map(PathBuf::from).filter(|p| p.exists()));
         let st = Ruleset::default()
@@ -328,7 +333,7 @@ pub mod sandbox {
         unsafe {
             cmd.pre_exec(move || {
                 libc::setpriority(libc::PRIO_PROCESS, 0, 10);
-                if !landlock(&ro, &rw).map_err(std::io::Error::other)? {
+                if !landlock_abi(&ro, &rw, ABI::V2).map_err(std::io::Error::other)? {
                     return Err(std::io::Error::other("landlock not enforced"));
                 }
                 seccomp_with(denied_hold()).map_err(std::io::Error::other)?;
