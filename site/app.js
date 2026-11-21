@@ -28,9 +28,9 @@ let recorded = null;
     const idx = await (await fetch("proof/index.json")).json();
     recorded = await (await fetch("proof/" + idx.latest)).json();
     $("#rec-json").href = "proof/" + idx.latest;
-    const nodes = recorded.nodes.map((n, i) => `N${i + 1} ${n.name}: ${n.isolation}${n.boxes_started ? `, ${n.boxes_started} boxes` : ""}`);
+    const nodes = recorded.nodes.map((n, i) => `${n.name} ${(idx.hosts || [])[i]?.split(" ").slice(1).join(" ") || ""}: isolation ${n.isolation}${n.boxes_started ? `, ${n.boxes_started} boxes` : ""}`);
     $("#rec-meta").textContent = `${idx.when}. ${recorded.passed} of ${recorded.total} steps hold. ${recorded.receipts.length} receipts from ${recorded.verify?.chains ?? "?"} nodes.`;
-    $("#rec-nodes").innerHTML = nodes.map((n) => `<span class="pill">${esc(n)}</span>`).join("") + (idx.hosts || []).map((h) => `<span class="pill">${esc(h)}</span>`).join("");
+    $("#rec-nodes").innerHTML = nodes.map((n) => `<span class="pill">${esc(n)}</span>`).join("") + "";
     stepsTable($("#rec-steps"), recorded.steps);
   } catch (e) {
     $("#rec-meta").textContent = "No recorded run is published yet.";
@@ -84,7 +84,7 @@ function render(full) {
     if (document.activeElement !== ta && ta.value !== n.text) ta.value = n.text;
     el.querySelector(".conf").textContent = n.conflicts.map((c) => `${c.kind} conflict: ${c.sides.join(" / ")}`).join("\n");
   });
-  layout();
+  if (full) layout();
   const rs = JSON.parse(sim.receipts(0)).slice(-40).reverse();
   $("#receipts").innerHTML = rs.map((r) => `<li class="${r.outcome.kind === "Refused" ? "r" : ""}"><span>#${r.seq}</span><span>${esc(r.actor)} ${esc(r.cell)} ${esc(r.op)} ${esc(r.target)}${r.outcome.kind === "Refused" ? " refused: " + esc(r.outcome.need) : ""}</span></li>`).join("");
 }
