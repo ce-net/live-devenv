@@ -1,1 +1,437 @@
-{}
+{
+  "contract": "live-devenv@1",
+  "ops": [
+    {
+      "args": [
+        "prefix"
+      ],
+      "cell": "ws.fs",
+      "doc": "List the files under a prefix that you may read.",
+      "needs": "ws.fs:read",
+      "op": "FsList",
+      "tool": "fs_list"
+    },
+    {
+      "args": [
+        "path"
+      ],
+      "cell": "ws.fs",
+      "doc": "Open a file: its id, version and state.",
+      "needs": "ws.fs:read",
+      "op": "FsOpen",
+      "tool": "fs_open"
+    },
+    {
+      "args": [
+        "path"
+      ],
+      "cell": "ws.fs",
+      "doc": "Read a file's text and version.",
+      "needs": "ws.fs:read",
+      "op": "FsRead",
+      "tool": "fs_read"
+    },
+    {
+      "args": [
+        "path",
+        "content",
+        "base_hash",
+        "change"
+      ],
+      "cell": "ws.fs",
+      "doc": "Replace or create a whole file; with base_hash it is compare-and-set.",
+      "needs": "ws.fs:write",
+      "op": "FsWrite",
+      "tool": "fs_write"
+    },
+    {
+      "args": [
+        "path",
+        "base",
+        "edits",
+        "change"
+      ],
+      "cell": "ws.fs",
+      "doc": "Range edits against a version you read; the cell maps them onto the present.",
+      "needs": "ws.fs:write",
+      "op": "FsPatch",
+      "tool": "fs_patch"
+    },
+    {
+      "args": [
+        "path",
+        "to"
+      ],
+      "cell": "ws.fs",
+      "doc": "Rename a file.",
+      "needs": "ws.fs:write",
+      "op": "FsMove",
+      "tool": "fs_move"
+    },
+    {
+      "args": [
+        "path"
+      ],
+      "cell": "ws.fs",
+      "doc": "Delete a file.",
+      "needs": "ws.fs:write",
+      "op": "FsDelete",
+      "tool": "fs_delete"
+    },
+    {
+      "args": [
+        "prefix"
+      ],
+      "cell": "ws.fs",
+      "doc": "Unsettled pairs under a prefix.",
+      "needs": "ws.fs:read",
+      "op": "FsConflicts",
+      "tool": "fs_conflicts"
+    },
+    {
+      "args": [
+        "path",
+        "pick"
+      ],
+      "cell": "ws.fs",
+      "doc": "Pick one side of a conflict.",
+      "needs": "ws.fs:resolve",
+      "op": "FsResolve",
+      "tool": ""
+    },
+    {
+      "args": [
+        "prefix"
+      ],
+      "cell": "ws.fs",
+      "doc": "Freeze a prefix into an immutable snapshot reference.",
+      "needs": "ws.fs:snapshot",
+      "op": "FsSnapshot",
+      "tool": "fs_snapshot"
+    },
+    {
+      "args": [
+        "snapshot",
+        "label"
+      ],
+      "cell": "ws.snap",
+      "doc": "Keep a snapshot from collection.",
+      "needs": "ws.snap:pin",
+      "op": "SnapPin",
+      "tool": ""
+    },
+    {
+      "args": [],
+      "cell": "ws.snap",
+      "doc": "Pinned snapshots.",
+      "needs": "ws.snap:read",
+      "op": "SnapPins",
+      "tool": ""
+    },
+    {
+      "args": [
+        "path",
+        "offset"
+      ],
+      "cell": "ws.presence",
+      "doc": "Say where your cursor is.",
+      "needs": "ws.presence:announce",
+      "op": "PresenceAnnounce",
+      "tool": "presence_announce"
+    },
+    {
+      "args": [
+        "prefix"
+      ],
+      "cell": "ws.presence",
+      "doc": "Who is here and where.",
+      "needs": "ws.presence:see",
+      "op": "PresenceWatch",
+      "tool": ""
+    },
+    {
+      "args": [
+        "title"
+      ],
+      "cell": "ws.review",
+      "doc": "Open a change set on the current tree.",
+      "needs": "ws.review:open",
+      "op": "ReviewOpen",
+      "tool": "review_open"
+    },
+    {
+      "args": [],
+      "cell": "ws.review",
+      "doc": "Change sets.",
+      "needs": "ws.review:open",
+      "op": "ReviewList",
+      "tool": ""
+    },
+    {
+      "args": [
+        "change"
+      ],
+      "cell": "ws.review",
+      "doc": "A change set's files against its base.",
+      "needs": "ws.review:open",
+      "op": "ReviewDiff",
+      "tool": "review_diff"
+    },
+    {
+      "args": [
+        "change"
+      ],
+      "cell": "ws.review",
+      "doc": "The snapshot of a change set (its base with its files).",
+      "needs": "ws.review:open",
+      "op": "ReviewSnapshot",
+      "tool": ""
+    },
+    {
+      "args": [
+        "change",
+        "text"
+      ],
+      "cell": "ws.review",
+      "doc": "Comment on a change set.",
+      "needs": "ws.review:comment",
+      "op": "ReviewComment",
+      "tool": "review_comment"
+    },
+    {
+      "args": [
+        "change",
+        "snapshot"
+      ],
+      "cell": "ws.review",
+      "doc": "Approve the exact snapshot of a change set.",
+      "needs": "ws.review:approve",
+      "op": "ReviewApprove",
+      "tool": "review_approve"
+    },
+    {
+      "args": [
+        "change"
+      ],
+      "cell": "ws.review",
+      "doc": "Merge an approved change set into the shared tree.",
+      "needs": "ws.review:merge",
+      "op": "ReviewMerge",
+      "tool": ""
+    },
+    {
+      "args": [
+        "capability"
+      ],
+      "cell": "ws.tools",
+      "doc": "Tools you may invoke for a capability.",
+      "needs": "ws.tools:find",
+      "op": "ToolsFind",
+      "tool": "tools_find"
+    },
+    {
+      "args": [
+        "tool"
+      ],
+      "cell": "ws.tools",
+      "doc": "Register a tool record (artifact by hash).",
+      "needs": "ws.tools:register",
+      "op": "ToolsRegister",
+      "tool": ""
+    },
+    {
+      "args": [
+        "input",
+        "target",
+        "network"
+      ],
+      "cell": "ws.build",
+      "doc": "Build a snapshot; placed on the node that fits.",
+      "needs": "ws.build:start",
+      "op": "BuildStart",
+      "tool": "build_start"
+    },
+    {
+      "args": [
+        "input",
+        "bin"
+      ],
+      "cell": "ws.test",
+      "doc": "Run the tests of a built snapshot; typed cases.",
+      "needs": "ws.test:start",
+      "op": "TestStart",
+      "tool": "test_start"
+    },
+    {
+      "args": [
+        "req"
+      ],
+      "cell": "ws.run",
+      "doc": "One boxed run of one tool (node to node).",
+      "needs": "ws.run:start",
+      "op": "RunStart",
+      "tool": ""
+    },
+    {
+      "args": [
+        "key"
+      ],
+      "cell": "ws.cache",
+      "doc": "A step result by key (node to node).",
+      "needs": "ws.cache:get",
+      "op": "CacheGet",
+      "tool": ""
+    },
+    {
+      "args": [
+        "link"
+      ],
+      "cell": "ws.keys",
+      "doc": "End a chain everywhere.",
+      "needs": "ws.keys:revoke",
+      "op": "KeysRevoke",
+      "tool": ""
+    },
+    {
+      "args": [
+        "person",
+        "pk"
+      ],
+      "cell": "ws.keys",
+      "doc": "Issue an 8-hour session chain to a signed-in person's browser key (gateway to keys).",
+      "needs": "ws.keys:session",
+      "op": "KeysSession",
+      "tool": ""
+    },
+    {
+      "args": [],
+      "cell": "ws.keys",
+      "doc": "Your identity, rights and paths.",
+      "needs": "ws.keys:whoami",
+      "op": "KeysWhoami",
+      "tool": "whoami"
+    },
+    {
+      "args": [
+        "snapshot",
+        "message"
+      ],
+      "cell": "ws.vcs",
+      "doc": "Commit a snapshot.",
+      "needs": "ws.vcs:commit",
+      "op": "VcsCommit",
+      "tool": "vcs_commit"
+    },
+    {
+      "args": [],
+      "cell": "ws.vcs",
+      "doc": "Commits.",
+      "needs": "ws.vcs:read",
+      "op": "VcsLog",
+      "tool": "vcs_log"
+    },
+    {
+      "args": [
+        "query",
+        "glob"
+      ],
+      "cell": "ws.search",
+      "doc": "Text search over files you may read.",
+      "needs": "ws.search:query",
+      "op": "SearchText",
+      "tool": "search_text"
+    },
+    {
+      "args": [
+        "since"
+      ],
+      "cell": "ws.audit",
+      "doc": "The receipt log.",
+      "needs": "ws.audit:read",
+      "op": "AuditRead",
+      "tool": "audit_read"
+    },
+    {
+      "args": [],
+      "cell": "ws.ui",
+      "doc": "The views this viewer may render.",
+      "needs": "ws.ui:render",
+      "op": "UiLayout",
+      "tool": ""
+    }
+  ],
+  "views": [
+    {
+      "cell": "ws.fs",
+      "needs": "ws.fs:read",
+      "title": "Files",
+      "view": "render:tree"
+    },
+    {
+      "cell": "ws.fs",
+      "needs": "ws.fs:read",
+      "title": "Editor",
+      "view": "render:editor"
+    },
+    {
+      "cell": "ws.fs",
+      "needs": "ws.fs:read",
+      "title": "Conflicts",
+      "view": "render:conflicts"
+    },
+    {
+      "cell": "ws.presence",
+      "needs": "ws.presence:see",
+      "title": "People",
+      "view": "render:people"
+    },
+    {
+      "cell": "ws.review",
+      "needs": "ws.review:open",
+      "title": "Changes",
+      "view": "render:changes"
+    },
+    {
+      "cell": "ws.build",
+      "needs": "ws.build:start",
+      "title": "Runs",
+      "view": "render:runs"
+    },
+    {
+      "cell": "ws.test",
+      "needs": "ws.test:start",
+      "title": "Tests",
+      "view": "render:tests"
+    },
+    {
+      "cell": "ws.tools",
+      "needs": "ws.tools:find",
+      "title": "Tools",
+      "view": "render:tools"
+    },
+    {
+      "cell": "ws.search",
+      "needs": "ws.search:query",
+      "title": "Search",
+      "view": "render:search"
+    },
+    {
+      "cell": "ws.vcs",
+      "needs": "ws.vcs:read",
+      "title": "History",
+      "view": "render:history"
+    },
+    {
+      "cell": "ws.audit",
+      "needs": "ws.audit:read",
+      "title": "Receipts",
+      "view": "render:receipts"
+    },
+    {
+      "cell": "ws.keys",
+      "needs": "ws.keys:whoami",
+      "title": "Grants",
+      "view": "render:grants"
+    }
+  ]
+}
