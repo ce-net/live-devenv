@@ -313,6 +313,23 @@ pub mod sandbox {
         }
     }
 
+    /// A long-running program in a box (a wrapped editor such as T3 Code): Landlock (read-only system paths and `ro`,
+    /// writable `rw` only) and the seccomp deny list, at nice 10, no CPU-time or address-space limits (the systemd unit
+    /// it runs in caps CPU and memory). No network namespace: such a program talks to its model provider.
+    pub fn apply_hold(cmd: &mut Command, ro: Vec<PathBuf>, rw: Vec<PathBuf>) -> Result<(), String> {
+        unsafe {
+            cmd.pre_exec(move || {
+                libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+                if !landlock(&ro, &rw).map_err(std::io::Error::other)? {
+                    return Err(std::io::Error::other("landlock not enforced"));
+                }
+                seccomp().map_err(std::io::Error::other)?;
+                Ok(())
+            });
+        }
+        Ok(())
+    }
+
     pub fn apply(cmd: &mut Command, s: Spec) -> Result<(), String> {
         let want_ns = s.class == "ns+landlock+seccomp";
         let want = s.class != "none";

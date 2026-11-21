@@ -7,6 +7,7 @@
 //!   ws-node verify FILE                              offline check of an exported receipt log
 //!   ws-node mcp --node URL --identity FILE           the agent door (MCP over stdio); no exec, no shell
 //!   ws-node mount --node URL --identity FILE --dir DIR [--every MS]   a directory kept in step with the workspace
+//!   ws-node hold [--ro P]... [--rw P]... -- PROGRAM ARGS   run a long-lived program boxed (Landlock + seccomp)
 //!   ws-node seed --dir DIR [--worker I]                the sample tree and tool records, once
 //!   ws-node contract                                 print the generated contract
 
@@ -42,6 +43,7 @@ fn main() {
         Some("verify") => cmd_verify(&args),
         Some("mcp") => cmd_mcp(&args),
         Some("mount") => cmd_mount(&args),
+        Some("hold") => cmd_hold(&args),
         Some("seed") => {
             // seed a new workspace with the sample tree and the tool records, as one person, through node 0
             let dir = PathBuf::from(arg(&args, "--dir").unwrap_or("tenant".into()));
@@ -576,6 +578,52 @@ fn cmd_mount(args: &[String]) -> i32 {
         }
         std::thread::sleep(Duration::from_millis(every));
     }
+}
+
+/// `hold`: exec a long-running program with Landlock (system paths and `--ro` read-only, `--rw` writable, nothing
+/// else) and the seccomp deny list, at nice 10. Linux only. It prints the class it got before the exec.
+fn cmd_hold(args: &[String]) -> i32 {
+    let Some(sep) = args.iter().position(|a| a == "--") else {
+        eprintln!("usage: ws-node hold [--ro P]... [--rw P]... -- PROGRAM ARGS");
+        return 2;
+    };
+    let mut ro = vec![];
+    let mut rw = vec![];
+    let mut i = 1;
+    while i < sep {
+        match args[i].as_str() {
+            "--ro" if i + 1 < sep => ro.push(PathBuf::from(&args[i + 1])),
+            "--rw" if i + 1 < sep => rw.push(PathBuf::from(&args[i + 1])),
+            a => {
+                eprintln!("hold: unknown {a}");
+                return 2;
+            }
+        }
+        i += 2;
+    }
+    let Some(prog) = args.get(sep + 1) else { return 2 };
+    hold_exec(prog, &args[sep + 2..], ro, rw)
+}
+
+#[cfg(target_os = "linux")]
+fn hold_exec(prog: &str, rest: &[String], ro: Vec<PathBuf>, rw: Vec<PathBuf>) -> i32 {
+    use std::os::unix::process::CommandExt;
+    let mut c = std::process::Command::new(prog);
+    c.args(rest);
+    eprintln!("hold: {prog} at class landlock+seccomp, rw {:?}", rw);
+    if let Err(e) = ws_box::sandbox::apply_hold(&mut c, ro, rw) {
+        eprintln!("hold: {e}");
+        return 1;
+    }
+    let e = c.exec();
+    eprintln!("hold: {prog}: {e}");
+    1
+}
+
+#[cfg(not(target_os = "linux"))]
+fn hold_exec(_: &str, _: &[String], _: Vec<PathBuf>, _: Vec<PathBuf>) -> i32 {
+    eprintln!("hold: Linux only");
+    1
 }
 
 /// MCP over stdio. The session is bound to one identity's chain; the tool list is filtered by it.
