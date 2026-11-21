@@ -241,12 +241,16 @@ pub mod sandbox {
         vec![
             SYS_socket, SYS_ptrace, SYS_mount, SYS_umount2, SYS_pivot_root, SYS_unshare, SYS_setns, SYS_bpf, SYS_keyctl, SYS_add_key, SYS_request_key,
             SYS_init_module, SYS_finit_module, SYS_delete_module, SYS_kexec_load, SYS_reboot, SYS_swapon, SYS_swapoff, SYS_perf_event_open, SYS_process_vm_writev,
+            SYS_io_uring_setup, SYS_io_uring_enter, SYS_io_uring_register,
         ]
     }
 
     fn seccomp() -> Result<(), String> {
         let d = denied();
         let mut f = vec![Filter { code: 0x20, jt: 0, jf: 0, k: 4 }, Filter { code: 0x15, jt: 1, jf: 0, k: ARCH }, Filter { code: 0x06, jt: 0, jf: 0, k: 0x8000_0000 }, Filter { code: 0x20, jt: 0, jf: 0, k: 0 }];
+        // x32 numbers (bit 30) would bypass the list on x86_64: refuse them all
+        #[cfg(target_arch = "x86_64")]
+        f.extend([Filter { code: 0x35, jt: 0, jf: 1, k: 0x4000_0000 }, Filter { code: 0x06, jt: 0, jf: 0, k: 0x0005_0000 | libc::EPERM as u32 }]);
         for nr in &d {
             f.push(Filter { code: 0x15, jt: 0, jf: 1, k: *nr as u32 });
             f.push(Filter { code: 0x06, jt: 0, jf: 0, k: 0x0005_0000 | libc::EPERM as u32 });

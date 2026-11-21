@@ -457,8 +457,11 @@ impl Node {
             }
             Op::KeysRevoke { link } => {
                 gate!(None, None);
-                if link.issuer != env.actor && env.chain.links.len() != 1 {
-                    return Answer::Refused(Refused { need: s("ws.keys:revoke by the issuer of the link"), have: env.chain.have(), why: s("only the issuer or a person granted by the root may revoke") });
+                // the issuer of the link may revoke it; otherwise only an owner (root-granted, may resolve), and
+                // never a node's own chain
+                let owner = env.chain.links.len() == 1 && self.check(env, "ws.fs:resolve", None, None).is_ok();
+                if link.issuer != env.actor && (!owner || self.node_keys().contains(&link.subject)) {
+                    return Answer::Refused(Refused { need: s("ws.keys:revoke by the issuer of the link"), have: env.chain.have(), why: s("only the issuer or an owner may revoke, and not a node's chain") });
                 }
                 self.revoked.insert(link.id());
                 Answer::Ok(json!({"revoked": link.id()}))
